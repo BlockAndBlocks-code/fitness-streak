@@ -6,7 +6,6 @@ import SwiftUI
 class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     var onRepCompleted: (() -> Void)?
     
-    // Для отладки: передаем координаты суставов в UI
     @Published var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
     
     private var isDown = false
@@ -21,7 +20,9 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             self?.analyzePose(result)
         }
         
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        // ВАЖНО: Фронтальная камера в портрете выдает изображение повернутым.
+        // Используем .leftMirrored, чтобы нейросеть видела картинку так же, как и пользователь.
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .leftMirrored, options: [:])
         try? handler.perform([request])
     }
     
@@ -37,8 +38,6 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         
         let angle = calculateAngle(p1: s, p2: e, p3: w)
         
-        // --- Сглаживание старта ---
-        // Ждем 30 кадров (~1 секунда), чтобы нейросеть "привыкла" к вам и угол стабилизировался
         if !isStabilized {
             framesCount += 1
             if framesCount > 30 && angle > 140 && angle < 180 {
@@ -47,7 +46,6 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             return
         }
         
-        // --- Отладка (рисуем скелет) ---
         var newJoints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
         newJoints[.rightShoulder] = s
         newJoints[.rightElbow] = e
@@ -62,7 +60,6 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             self?.joints = newJoints
         }
         
-        // --- Логика подсчета ---
         if angle < 100 && !isDown {
             isDown = true
         } else if angle > 150 && isDown {
@@ -81,7 +78,6 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         let magnitude1 = sqrt(v1.dx * v1.dx + v1.dy * v1.dy)
         let magnitude2 = sqrt(v2.dx * v2.dx + v2.dy * v2.dy)
         
-        // Защита от деления на ноль
         if magnitude1 == 0 || magnitude2 == 0 { return 0 }
         
         let angleRadians = acos(dotProduct / (magnitude1 * magnitude2))
