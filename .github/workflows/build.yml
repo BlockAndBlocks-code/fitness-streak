@@ -1,0 +1,49 @@
+name: Build iOS App
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for iOS Device
+        run: |
+          xcodebuild \
+            -project FitnessStreak.xcodeproj \
+            -scheme FitnessStreak \
+            -sdk iphoneos \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package unsigned .ipa
+        run: |
+          mkdir -p Payload
+          cp -r ~/Library/Developer/Xcode/DerivedData/*/Build/Products/Debug-iphoneos/FitnessStreak.app Payload/ 2>/dev/null || \
+          find ~/Library/Developer/Xcode/DerivedData -name "FitnessStreak.app" -path "*Debug-iphoneos*" -type d -exec cp -r {} Payload/ \;
+          zip -r FitnessStreak-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FitnessStreak-ipa
+          path: FitnessStreak-unsigned.ipa
