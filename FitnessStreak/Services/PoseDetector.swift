@@ -2,15 +2,21 @@ import Foundation
 import Vision
 import AVFoundation
 import SwiftUI
+import Combine
 
 class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     var onRepCompleted: (() -> Void)?
+    var onPlankTick: (() -> Void)? // Для планки
     
     @Published var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
+    
+    var currentExercise: ExerciseType = .pushups
+    var isActive: Bool = false
     
     private var isDown = false
     private var isStabilized = false
     private var framesCount = 0
+    private var lastPlankTime = Date()
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
@@ -20,67 +26,106 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             self?.analyzePose(result)
         }
         
-        // ВАЖНО: Фронтальная камера в портрете выдает изображение повернутым.
-        // Используем .leftMirrored, чтобы нейросеть видела картинку так же, как и пользователь.
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .leftMirrored, options: [:])
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
         try? handler.perform([request])
     }
     
     private func analyzePose(_ observation: VNHumanBodyPoseObservation) {
-        guard let rightArm = try? observation.recognizedPoints(.rightArm),
-              let leftArm = try? observation.recognizedPoints(.leftArm) else { return }
+        guard let allPoints = try? observation.recognizedPoints(.all) else { return }
         
-        let shoulder = rightArm[.rightShoulder]?.location ?? leftArm[.leftShoulder]?.location
-        let elbow = rightArm[.rightElbow]?.location ?? leftArm[.leftElbow]?.location
-        let wrist = rightArm[.rightWrist]?.location ?? leftArm[.leftWrist]?.location
+        // Обновляем скелет
+        var newJoints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
+        for (key, point) in allPoints { newJoints[key] = point.location }
+        DispatchQueue.main.async { [weak self] in self?.joints = newJoints }
+        
+        guard isActive else { return }
+        
+        // Логика для разных упражнений
+        switch currentExercise {
+        case .pushups:
+            checkPushups(allPoints)
+        case .squats:
+            checkSquats(allPoints)
+        case .plank:
+            checkPlank(allPoints)
+        }
+    }
+    
+    // ОТЖИМАНИЯ
+    private func checkPushups(_ points: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
+        let shoulder = points[.rightShoulder]?.location ?? points[.leftShoulder]?.location
+        let elbow = points[.rightElbow]?.location ?? points[.leftElbow]?.location
+        let wrist = points[.rightWrist]?.location ?? points[.leftWrist]?.location
         
         guard let s = shoulder, let e = elbow, let w = wrist else { return }
-        
         let angle = calculateAngle(p1: s, p2: e, p3: w)
         
         if !isStabilized {
             framesCount += 1
-            if framesCount > 30 && angle > 140 && angle < 180 {
-                isStabilized = true
-            }
+            if framesCount > 30 && angle > 140 { isStabilized = true }
             return
         }
         
-        var newJoints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
-        newJoints[.rightShoulder] = s
-        newJoints[.rightElbow] = e
-        newJoints[.rightWrist] = w
-        if let ls = leftArm[.leftShoulder]?.location, let le = leftArm[.leftElbow]?.location, let lw = leftArm[.leftWrist]?.location {
-            newJoints[.leftShoulder] = ls
-            newJoints[.leftElbow] = le
-            newJoints[.leftWrist] = lw
-        }
-        
-        DispatchQueue.main.async { [weak self] in
-            self?.joints = newJoints
-        }
-        
-        if angle < 100 && !isDown {
-            isDown = true
-        } else if angle > 150 && isDown {
+        if angle < 100 && !isDown { isDown = true }
+        else if angle > 150 && isDown {
             isDown = false
-            DispatchQueue.main.async { [weak self] in
-                self?.onRepCompleted?()
-            }
+            triggerRep()
         }
+    }
+    
+    // ПРИСЕДАНИЯ
+    private func checkSquats(_ points: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
+        let hip = points[.rightHip]?.location ?? points[.leftHip]?.location
+        let knee = points[.rightKnee]?.location ?? points[.leftKnee]?.location
+        let ankle = points[.rightAnkle]?.location ?? points[.leftAnkle]?.location
+        
+        guard let h = hip, let k = knee, let a = ankle else { return }
+        let angle = calculateAngle(p1: h, p2: k, p3: a)
+        
+        if !isStabilized {
+            framesCount += 1
+            if framesCount > 30 && angle > 150 { isStabilized = true }
+            return
+        }
+        
+        // Если угол меньше 110 — присели. Если больше 160 — встали.
+        if angle < 110 && !isDown { isDown = true }
+        else if angle > 160 && isDown {
+            isDown = false
+            triggerRep()
+        }
+    }
+    
+    // ПЛАНКА (Считаем время, проверяя, что человек в планке)
+    private func checkPlank(_ points: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
+        // Простая проверка: плечи и бедра должны быть примерно на одной высоте.
+        // Если человек упал (бедра ниже плеч), таймер останавливается.
+        guard let s = points[.rightShoulder]?.location ?? points[.leftShoulder]?.location,
+              let h = points[.rightHip]?.location ?? points[.leftHip]?.location else { return }
+        
+        // Если разница по Y слишком большая — значит человек упал или встал
+        if abs(s.y - h.y) > 0.2 {
+            return // Не в планке, время не идет
+        }
+        
+        let now = Date()
+        if now.timeIntervalSince(lastPlankTime) >= 1.0 {
+            lastPlankTime = now
+            DispatchQueue.main.async { [weak self] in self?.onPlankTick?() }
+        }
+    }
+    
+    private func triggerRep() {
+        DispatchQueue.main.async { [weak self] in self?.onRepCompleted?() }
     }
     
     private func calculateAngle(p1: CGPoint, p2: CGPoint, p3: CGPoint) -> CGFloat {
         let v1 = CGVector(dx: p1.x - p2.x, dy: p1.y - p2.y)
         let v2 = CGVector(dx: p3.x - p2.x, dy: p3.y - p2.y)
-        
-        let dotProduct = v1.dx * v2.dx + v1.dy * v2.dy
-        let magnitude1 = sqrt(v1.dx * v1.dx + v1.dy * v1.dy)
-        let magnitude2 = sqrt(v2.dx * v2.dx + v2.dy * v2.dy)
-        
-        if magnitude1 == 0 || magnitude2 == 0 { return 0 }
-        
-        let angleRadians = acos(dotProduct / (magnitude1 * magnitude2))
-        return angleRadians * 180 / .pi
+        let dot = v1.dx * v2.dx + v1.dy * v2.dy
+        let mag1 = sqrt(v1.dx * v1.dx + v1.dy * v1.dy)
+        let mag2 = sqrt(v2.dx * v2.dx + v2.dy * v2.dy)
+        if mag1 == 0 || mag2 == 0 { return 0 }
+        return acos(dot / (mag1 * mag2)) * 180 / .pi
     }
 }
