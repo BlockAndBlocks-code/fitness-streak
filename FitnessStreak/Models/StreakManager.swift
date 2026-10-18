@@ -21,21 +21,24 @@ class StreakManager: ObservableObject {
             let diff = calendar.dateComponents([.day], from: last, to: today).day ?? 0
             
             if diff == 0 {
-                // Уже тренировался сегодня
-                return
+                return // Уже тренировался сегодня
             } else if diff == 1 {
-                // Тренировался вчера - увеличиваем streak
-                currentStreak += 1
+                currentStreak += 1 // Тренировался вчера
             } else {
-                // Пропустил день - сбрасываем
-                currentStreak = 1
+                currentStreak = 1 // Пропустил день
             }
         } else {
-            // Первая тренировка
             currentStreak = 1
         }
         
         lastWorkoutDate = today
+        save()
+    }
+    
+    // НОВАЯ ФУНКЦИЯ: Полный сброс ударного режима
+    func resetStreak() {
+        currentStreak = 0
+        lastWorkoutDate = nil
         save()
     }
     

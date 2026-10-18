@@ -23,9 +23,27 @@ struct ContentView: View {
                 
                 VStack {
                     HStack {
+                        // Кнопка сброса
+                        Button(action: {
+                            reps = 0
+                            // Если хотите сбрасывать и ударный режим, раскомментируйте строку ниже:
+                            // streakManager.resetStreak() 
+                        }) {
+                            Image(systemName: "arrow.counterclockwise.circle.fill")
+                                .font(.system(size: 30))
+                                .foregroundColor(.white)
+                                .padding(10)
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Circle())
+                        }
+                        .padding()
+                        
                         Spacer()
+                        
+                        // Кнопка отладки
                         Button(action: { showRig.toggle() }) {
                             Image(systemName: showRig ? "eye.fill" : "eye.slash.fill")
+                                .font(.system(size: 30))
                                 .foregroundColor(.white)
                                 .padding(10)
                                 .background(Color.black.opacity(0.5))
@@ -96,7 +114,6 @@ class CameraViewController: UIViewController {
             }
         }
         
-        // Обновляем скелет
         poseDetector.$joints
             .receive(on: DispatchQueue.main)
             .sink { [weak self] joints in
@@ -149,14 +166,10 @@ class RigOverlayView: UIView {
     private var drawingLayer: CAShapeLayer = CAShapeLayer()
     
     private let connections: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
-        (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
+        // Поменяли местами left и right, чтобы соответствовать зеркалу
         (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
-        (.leftShoulder, .rightShoulder),
-        (.leftHip, .leftKnee), (.leftKnee, .leftAnkle),
-        (.rightHip, .rightKnee), (.rightKnee, .rightAnkle),
-        (.leftHip, .rightHip),
-        (.leftShoulder, .leftHip), (.rightShoulder, .rightHip),
-        (.neck, .nose)
+        (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
+        (.leftShoulder, .rightShoulder)
     ]
     
     private func setupLayers() {
@@ -210,8 +223,8 @@ class RigOverlayView: UIView {
     }
     
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
-        // Если скелет перевернут или зеркальный - меняйте здесь
-        let x = (1.0 - visionPoint.x) * bounds.width
+        // Убрали (1.0 - x), так как камера сама по себе зеркалит картинку
+        let x = visionPoint.x * bounds.width
         let y = (1.0 - visionPoint.y) * bounds.height
         return CGPoint(x: x, y: y)
     }
