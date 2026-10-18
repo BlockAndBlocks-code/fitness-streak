@@ -147,16 +147,9 @@ class CameraViewController: UIViewController {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
               let input = try? AVCaptureDeviceInput(device: device) else { return }
         captureSession.addInput(input)
-        
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(poseDetector, queue: DispatchQueue(label: "cameraQueue"))
         captureSession.addOutput(output)
-        
-        // ВАЖНО: Настраиваем соединение на портретный режим!
-        if let connection = output.connection(with: .video) {
-            poseDetector.configureOutput(output, connection: connection)
-        }
-        
         DispatchQueue.global(qos: .userInitiated).async { self.captureSession.startRunning() }
     }
     
@@ -193,7 +186,7 @@ class RigOverlayView: UIView {
     private func setupLayers() {
         guard let session = captureSession else { return }
         let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspectFill // Заполняем экран
+        layer.videoGravity = .resizeAspect
         layer.frame = bounds
         self.layer.insertSublayer(layer, at: 0)
         self.previewLayer = layer
@@ -233,11 +226,10 @@ class RigOverlayView: UIView {
         return !(point.x <= 0.01 || point.x >= 0.99 || point.y <= 0.01 || point.y >= 0.99)
     }
     
-    // --- ВОЗВРАЩАЕМ НАТИВНЫЙ МЕТОД ---
+    // --- ИСПОЛЬЗУЕМ НАТИВНЫЙ МЕТОД ---
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
         guard let preview = previewLayer else { return .zero }
-        // layerPointConverted сам учтет портретную ориентацию, зеркалирование и Aspect Fill
-        // ВАЖНО: убираем 1.0 - y, так как слой теперь сам переворачивает Y
-        return preview.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: visionPoint.x, y: 1.0 - visionPoint.y))
+        // Нативный метод сам учтет Aspect Fill и ориентацию!
+        return preview.layerPointConverted(fromCaptureDevicePoint: visionPoint)
     }
 }
