@@ -26,61 +26,89 @@ struct ContentView: View {
                     onPlankTick: handlePlankTick,
                     showRig: showRig
                 )
+                
                 if countdown > 0 {
-                    Text("\(countdown)").font(.system(size: 120, weight: .bold)).foregroundColor(.white).shadow(radius: 10)
+                    Text("\(countdown)")
+                        .font(.system(size: 120, weight: .bold))
+                        .foregroundColor(.white)
+                        .shadow(radius: 10)
                 }
             }
             .frame(maxHeight: .infinity)
             .background(Color.black)
             
+            // Нижняя панель управления
             VStack(spacing: 15) {
                 if !workoutManager.exercises.isEmpty {
                     let ex = workoutManager.exercises[currentExerciseIndex]
                     VStack(spacing: 5) {
                         Text(ex.type.rawValue).font(.headline).foregroundColor(.gray)
+                        
                         if isAllDone {
                             Text("Все выполнено! 🎉").font(.title).bold().foregroundColor(.green)
                         } else {
-                            Text("\(currentProgress) / \(ex.target)").font(.title).bold().foregroundColor(.primary)
+                            Text("\(currentProgress) / \(ex.target)")
+                                .font(.title).bold().foregroundColor(.primary)
                         }
                     }
-                    .padding().frame(maxWidth: .infinity).background(Color.gray.opacity(0.1)).cornerRadius(15).padding(.horizontal)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(15)
+                    .padding(.horizontal)
                 }
                 
                 HStack(spacing: 20) {
                     Button(action: {
-                        currentExerciseIndex = 0; currentProgress = 0; isWorkoutActive = false; isAllDone = false; workoutManager.forceReset()
+                        currentExerciseIndex = 0
+                        currentProgress = 0
+                        isWorkoutActive = false
+                        isAllDone = false
+                        workoutManager.forceReset()
                     }) {
-                        Image(systemName: "arrow.counterclockwise").font(.title).padding().background(Color.gray.opacity(0.3)).foregroundColor(.white).clipShape(Circle())
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.title).padding().background(Color.gray.opacity(0.3)).foregroundColor(.white).clipShape(Circle())
                     }
+                    
                     Button(action: startWorkout) {
                         Text(isAllDone ? "ГОТОВО" : (isWorkoutActive ? "ВЫПОЛНЯЙТЕ" : "СТАРТ"))
                             .font(.title2.bold()).padding(.horizontal, 40).padding(.vertical, 15)
                             .background(isWorkoutActive ? Color.gray : (isAllDone ? Color.gray : Color.green))
                             .foregroundColor(.white).cornerRadius(30)
-                    }.disabled(isWorkoutActive || countdown > 0 || isAllDone)
+                    }
+                    .disabled(isWorkoutActive || countdown > 0 || isAllDone)
                     
                     Button(action: { showRig.toggle() }) {
-                        Image(systemName: showRig ? "eye.fill" : "eye.slash.fill").font(.title).padding().background(Color.gray.opacity(0.3)).foregroundColor(.white).clipShape(Circle())
+                        Image(systemName: showRig ? "eye.fill" : "eye.slash.fill")
+                            .font(.title).padding().background(Color.gray.opacity(0.3)).foregroundColor(.white).clipShape(Circle())
                     }
                 }
             }
             .padding(.bottom, 30)
             .background(Color(UIColor.systemBackground))
             .onReceive(timer) { _ in
-                if countdown > 0 { countdown -= 1; if countdown == 0 { isWorkoutActive = true } }
+                if countdown > 0 {
+                    countdown -= 1
+                    if countdown == 0 { isWorkoutActive = true }
+                }
             }
         }
         .edgesIgnoringSafeArea(.top)
     }
     
-    func startWorkout() { currentProgress = 0; isWorkoutActive = false; countdown = 3 }
+    func startWorkout() {
+        currentProgress = 0
+        isWorkoutActive = false
+        countdown = 3
+    }
+    
     func handleRepCompleted() {
         guard isWorkoutActive, !workoutManager.exercises.isEmpty else { return }
         let target = workoutManager.exercises[currentExerciseIndex].target
         currentProgress += 1
         if currentProgress >= target { finishExercise() }
     }
+    
     func handlePlankTick() {
         guard isWorkoutActive, !workoutManager.exercises.isEmpty else { return }
         let ex = workoutManager.exercises[currentExerciseIndex]
@@ -88,12 +116,16 @@ struct ContentView: View {
         currentProgress += 1
         if currentProgress >= ex.target { finishExercise() }
     }
+    
     func finishExercise() {
         isWorkoutActive = false
         if currentExerciseIndex + 1 < workoutManager.exercises.count {
-            currentExerciseIndex += 1; currentProgress = 0; countdown = 3
+            currentExerciseIndex += 1
+            currentProgress = 0
+            countdown = 3
         } else {
-            isAllDone = true; streakManager.completeWorkout()
+            isAllDone = true
+            streakManager.completeWorkout()
         }
     }
 }
@@ -111,6 +143,7 @@ struct CameraView: UIViewControllerRepresentable {
         controller.onPlankTick = onPlankTick
         return controller
     }
+    
     func updateUIViewController(_ uiViewController: CameraViewController, context: Context) {
         uiViewController.showRig = showRig
         uiViewController.currentExercise = currentExercise
@@ -147,10 +180,14 @@ class CameraViewController: UIViewController {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
               let input = try? AVCaptureDeviceInput(device: device) else { return }
         captureSession.addInput(input)
+        
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(poseDetector, queue: DispatchQueue(label: "cameraQueue"))
         captureSession.addOutput(output)
-        DispatchQueue.global(qos: .userInitiated).async { self.captureSession.startRunning() }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.captureSession.startRunning()
+        }
     }
     
     private func setupRigOverlay() {
@@ -208,11 +245,13 @@ class RigOverlayView: UIView {
         self.joints = newJoints
         guard showRig else { drawingLayer.path = nil; return }
         let path = UIBezierPath()
+        
         for (start, end) in connections {
             if let p1 = joints[start], let p2 = joints[end], isValidPoint(p1), isValidPoint(p2) {
                 path.move(to: convertPoint(p1)); path.addLine(to: convertPoint(p2))
             }
         }
+        
         for (_, point) in joints {
             if isValidPoint(point) {
                 let p = convertPoint(point)
@@ -226,10 +265,10 @@ class RigOverlayView: UIView {
         return !(point.x <= 0.01 || point.x >= 0.99 || point.y <= 0.01 || point.y >= 0.99)
     }
     
-    // --- ИСПОЛЬЗУЕМ НАТИВНЫЙ МЕТОД ---
+    // ИСПОЛЬЗУЕМ НАТИВНЫЙ МЕТОД С ИНВЕРСИЕЙ Y
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
         guard let preview = previewLayer else { return .zero }
-        // Нативный метод сам учтет Aspect Fill и ориентацию!
-        return preview.layerPointConverted(fromCaptureDevicePoint: visionPoint)
+        // 1.0 - y переворачивает координаты по вертикали
+        return preview.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: visionPoint.x, y: 1.0 - visionPoint.y))
     }
 }
