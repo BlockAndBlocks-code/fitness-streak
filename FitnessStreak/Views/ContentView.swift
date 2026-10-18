@@ -130,8 +130,7 @@ class CameraViewController: UIViewController {
         rigOverlay = RigOverlayView(frame: view.bounds)
         rigOverlay.backgroundColor = .clear
         rigOverlay.isHidden = true
-        // Передаем слой превью в оверлей, чтобы знать, как камера обрезает картинку
-        rigOverlay.previewLayer = previewLayer 
+        rigOverlay.previewLayer = previewLayer
         view.addSubview(rigOverlay)
     }
     
@@ -168,10 +167,9 @@ class RigOverlayView: UIView {
         drawDot(context: context, joint: .leftWrist, preview: preview)
     }
     
-    // Идеальный перевод координат Vision в координаты UIView с учетом Aspect Fill
+    // Исправленный метод: layerPointConverted(fromCaptureDevicePoint:)
     private func convertPoint(_ visionPoint: CGPoint, preview: AVCaptureVideoPreviewLayer) -> CGPoint {
-        // Переводим из системы Vision (0...1, Y снизу вверх) в систему слоя превью
-        let layerPoint = preview.layerPointConvert(CGPoint(x: visionPoint.x, y: 1.0 - visionPoint.y), from: preview)
+        let layerPoint = preview.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: visionPoint.x, y: 1.0 - visionPoint.y))
         return layerPoint
     }
     
