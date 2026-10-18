@@ -46,6 +46,11 @@ struct ContentView: View {
                 
                 Text("Ударный режим: \(streakManager.currentStreak) 🔥")
                     .font(.title2).foregroundColor(.orange)
+                
+                if reps >= targetReps {
+                    Text("Тренировка засчитана! Молодец!")
+                        .font(.headline).foregroundColor(.green)
+                }
             }
             .padding()
             
@@ -91,11 +96,11 @@ class CameraViewController: UIViewController {
             }
         }
         
+        // Обновляем скелет
         poseDetector.$joints
             .receive(on: DispatchQueue.main)
             .sink { [weak self] joints in
-                self?.rigOverlay?.joints = joints
-                self?.rigOverlay?.setNeedsDisplay()
+                self?.rigOverlay?.updateJoints(joints)
             }
             .store(in: &cancellables)
     }
@@ -118,7 +123,8 @@ class CameraViewController: UIViewController {
     private func setupRigOverlay() {
         rigOverlay = RigOverlayView(frame: view.bounds)
         rigOverlay.backgroundColor = .black
-        rigOverlay.captureSession = captureSession // Передаем сессию для отрисовки видео
+        rigOverlay.captureSession = captureSession
+        rigOverlay.showRig = self.showRig
         view.addSubview(rigOverlay)
     }
     
@@ -129,13 +135,18 @@ class CameraViewController: UIViewController {
 }
 
 class RigOverlayView: UIView {
-    var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
-    var showRig: Bool = false
+    var showRig: Bool = false {
+        didSet { updateJoints(joints) }
+    }
+    
+    private var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
+    
     var captureSession: AVCaptureSession? {
-        didSet { setupPreviewLayer() }
+        didSet { setupLayers() }
     }
     
     private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var drawingLayer: CAShapeLayer = CAShapeLayer()
     
     private let connections: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
         (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
@@ -148,58 +159,60 @@ class RigOverlayView: UIView {
         (.neck, .nose)
     ]
     
-    private func setupPreviewLayer() {
+    private func setupLayers() {
         guard let session = captureSession else { return }
+        
+        // 1. Слой видео (кладем в самый низ)
         let layer = AVCaptureVideoPreviewLayer(session: session)
         layer.videoGravity = .resizeAspect
         layer.frame = bounds
-        self.layer.addSublayer(layer)
+        self.layer.insertSublayer(layer, at: 0)
         self.previewLayer = layer
+        
+        // 2. Слой для скелета (кладем поверх видео)
+        drawingLayer.frame = bounds
+        drawingLayer.strokeColor = UIColor.green.cgColor
+        drawingLayer.lineWidth = 3.0
+        drawingLayer.fillColor = UIColor.clear.cgColor
+        self.layer.addSublayer(drawingLayer)
     }
     
     override func layoutSubviews() {
         super.layoutSubviews()
         previewLayer?.frame = bounds
+        drawingLayer.frame = bounds
     }
     
-    override func draw(_ rect: CGRect) {
-        super.draw(rect)
-        guard showRig, let context = UIGraphicsGetCurrentContext() else { return }
+    func updateJoints(_ newJoints: [VNHumanBodyPoseObservation.JointName: CGPoint]) {
+        self.joints = newJoints
+        guard showRig else {
+            drawingLayer.path = nil
+            return
+        }
         
-        context.setStrokeColor(UIColor.green.cgColor)
-        context.setLineWidth(3.0)
+        let path = UIBezierPath()
         
         for (start, end) in connections {
-            drawLine(context: context, from: start, to: end)
+            if let p1 = joints[start], let p2 = joints[end] {
+                let point1 = convertPoint(p1)
+                let point2 = convertPoint(p2)
+                path.move(to: point1)
+                path.addLine(to: point2)
+            }
         }
         
-        context.setFillColor(UIColor.red.cgColor)
         for (_, point) in joints {
-            drawDot(context: context, point: point)
+            let p = convertPoint(point)
+            path.append(UIBezierPath(ovalIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)))
         }
+        
+        drawingLayer.path = path.cgPath
     }
     
-    // Переводим координаты Vision в координаты UIView
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
-        // Если скелет перевернут (голова внизу), замените (1.0 - visionPoint.y) на visionPoint.y
+        // Если скелет перевернут или зеркальный - меняйте здесь
         let x = (1.0 - visionPoint.x) * bounds.width
         let y = (1.0 - visionPoint.y) * bounds.height
         return CGPoint(x: x, y: y)
-    }
-    
-    private func drawLine(context: CGContext, from: VNHumanBodyPoseObservation.JointName, to: VNHumanBodyPoseObservation.JointName) {
-        guard let p1 = joints[from], let p2 = joints[to] else { return }
-        
-        let point1 = convertPoint(p1)
-        let point2 = convertPoint(p2)
-        
-        context.move(to: point1)
-        context.addLine(to: point2)
-        context.strokePath()
-    }
-    
-    private func drawDot(context: CGContext, point: CGPoint) {
-        let p = convertPoint(point)
-        context.fillEllipse(in: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8))
     }
 }
