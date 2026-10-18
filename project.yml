@@ -1,0 +1,24 @@
+name: FitnessStreak
+options:
+  bundleIdPrefix: com.fitness
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+targets:
+  FitnessStreak:
+    type: application
+    platform: iOS
+    sources: [FitnessStreak]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fitness.streak
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        INFOPLIST_KEY_NSCameraUsageDescription: "Камера нужна для распознавания упражнений."
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        ARCHS: arm64
+        SWIFT_VERSION: "5.9"
