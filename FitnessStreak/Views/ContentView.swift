@@ -1,5 +1,7 @@
 import SwiftUI
 import AVFoundation
+import Combine // <--- Импорт перенесен сюда, в начало файла
+import Vision   // <--- Добавлен импорт Vision
 
 struct ContentView: View {
     @StateObject private var streakManager = StreakManager()
@@ -10,7 +12,6 @@ struct ContentView: View {
     var body: some View {
         VStack {
             ZStack {
-                // Камера
                 CameraView(onRepCompleted: {
                     if reps < targetReps {
                         reps += 1
@@ -20,7 +21,6 @@ struct ContentView: View {
                     }
                 }, showRig: showRig)
                 
-                // Кнопка включения отладки
                 VStack {
                     HStack {
                         Spacer()
@@ -59,7 +59,6 @@ struct ContentView: View {
     }
 }
 
-// Обертка, передающая флаг отладки в контроллер
 struct CameraView: UIViewControllerRepresentable {
     let onRepCompleted: () -> Void
     let showRig: Bool
@@ -85,6 +84,7 @@ class CameraViewController: UIViewController {
     private let poseDetector = PoseDetector()
     private var previewLayer: AVCaptureVideoPreviewLayer!
     private var rigOverlay: RigOverlayView!
+    private var cancellables = Set<AnyCancellable>()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -97,7 +97,6 @@ class CameraViewController: UIViewController {
             }
         }
         
-        // Подписываемся на обновление точек для отрисовки
         poseDetector.$joints
             .receive(on: DispatchQueue.main)
             .sink { [weak self] joints in
@@ -106,10 +105,6 @@ class CameraViewController: UIViewController {
             }
             .store(in: &cancellables)
     }
-    
-    private var cancellables = Set<AnyCancellable>()
-    // Импортируем Combine для sink
-    import Combine 
     
     private func setupCamera() {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
@@ -134,7 +129,7 @@ class CameraViewController: UIViewController {
     private func setupRigOverlay() {
         rigOverlay = RigOverlayView(frame: view.bounds)
         rigOverlay.backgroundColor = .clear
-        rigOverlay.isHidden = true // Скрыто по умолчанию
+        rigOverlay.isHidden = true
         view.addSubview(rigOverlay)
     }
     
@@ -145,7 +140,6 @@ class CameraViewController: UIViewController {
     }
 }
 
-// Слой для отрисовки скелета
 class RigOverlayView: UIView {
     var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
     
@@ -156,13 +150,11 @@ class RigOverlayView: UIView {
         context.setStrokeColor(UIColor.green.cgColor)
         context.setLineWidth(3.0)
         
-        // Рисуем линии между суставами (Плечо - Локоть - Запястье)
         drawLine(context: context, from: .rightShoulder, to: .rightElbow)
         drawLine(context: context, from: .rightElbow, to: .rightWrist)
         drawLine(context: context, from: .leftShoulder, to: .leftElbow)
         drawLine(context: context, from: .leftElbow, to: .leftWrist)
         
-        // Рисуем сами точки
         drawDot(context: context, joint: .rightShoulder)
         drawDot(context: context, joint: .rightElbow)
         drawDot(context: context, joint: .rightWrist)
@@ -174,8 +166,6 @@ class RigOverlayView: UIView {
     private func drawLine(context: CGContext, from: VNHumanBodyPoseObservation.JointName, to: VNHumanBodyPoseObservation.JointName) {
         guard let p1 = joints[from], let p2 = joints[to] else { return }
         
-        // Vision возвращает координаты от 0 до 1 (снизу вверх). Переводим их в координаты экрана.
-        // Важно: координата Y у UIView идет сверху вниз, поэтому инвертируем.
         let point1 = CGPoint(x: p1.x * bounds.width, y: (1 - p1.y) * bounds.height)
         let point2 = CGPoint(x: p2.x * bounds.width, y: (1 - p2.y) * bounds.height)
         
