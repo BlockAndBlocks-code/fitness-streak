@@ -18,15 +18,9 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
     private var framesCount = 0
     private var lastPlankTime = Date()
     
-    // Настраиваем видеовыход на правильную ориентацию
-    func configureOutput(_ output: AVCaptureVideoDataOutput, connection: AVCaptureConnection) {
-        if connection.isVideoOrientationSupported {
-            connection.videoOrientation = .portrait
-        }
-        if connection.isVideoMirroringSupported {
-            connection.isVideoMirrored = true
-        }
-    }
+    // Запоминаем последнюю позицию таза и плеч для ROI
+    private var lastHip: CGPoint?
+    private var lastShoulder: CGPoint?
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
@@ -36,13 +30,34 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             self?.analyzePose(result)
         }
         
-        // Теперь используем .up, так как соединение уже повернуто в портрет
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        // --- Установка Region of Interest (ROI) ---
+        if let hip = lastHip, let shoulder = lastShoulder {
+            if currentExercise == .squats {
+                // Для приседаний ищем только нижнюю часть тела
+                let minY = min(hip.y, shoulder.y) - 0.1
+                let height = 1.0 - minY
+                request.regionOfInterest = CGRect(x: 0, y: 0, width: 1, height: height)
+            } else {
+                // Для отжиманий и планки ищем торс и руки
+                let minY = min(hip.y, shoulder.y) - 0.2
+                let maxY = max(hip.y, shoulder.y) + 0.2
+                request.regionOfInterest = CGRect(x: 0, y: minY, width: 1, height: maxY - minY)
+            }
+        }
+        
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
         try? handler.perform([request])
     }
     
     private func analyzePose(_ observation: VNHumanBodyPoseObservation) {
         guard let allPoints = try? observation.recognizedPoints(.all) else { return }
+        
+        // Обновляем ROI
+        if let hip = allPoints[.root]?.location ?? allPoints[.leftHip]?.location ?? allPoints[.rightHip]?.location,
+           let shoulder = allPoints[.leftShoulder]?.location ?? allPoints[.rightShoulder]?.location {
+            lastHip = hip
+            lastShoulder = shoulder
+        }
         
         var newJoints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
         for (key, point) in allPoints { newJoints[key] = point.location }

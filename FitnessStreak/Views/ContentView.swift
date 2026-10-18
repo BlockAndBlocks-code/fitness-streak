@@ -37,7 +37,6 @@ struct ContentView: View {
             .frame(maxHeight: .infinity)
             .background(Color.black)
             
-            // Нижняя панель управления
             VStack(spacing: 15) {
                 if !workoutManager.exercises.isEmpty {
                     let ex = workoutManager.exercises[currentExerciseIndex]
@@ -155,7 +154,12 @@ class CameraViewController: UIViewController {
     var onRepCompleted: (() -> Void)?
     var onPlankTick: (() -> Void)?
     var showRig: Bool = false { didSet { rigOverlay?.showRig = showRig } }
-    var currentExercise: ExerciseType = .pushups { didSet { poseDetector.currentExercise = currentExercise } }
+    var currentExercise: ExerciseType = .pushups { 
+        didSet { 
+            poseDetector.currentExercise = currentExercise 
+            rigOverlay?.currentExercise = currentExercise
+        } 
+    }
     var isActive: Bool = false { didSet { poseDetector.isActive = isActive } }
     
     private let captureSession = AVCaptureSession()
@@ -180,14 +184,10 @@ class CameraViewController: UIViewController {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
               let input = try? AVCaptureDeviceInput(device: device) else { return }
         captureSession.addInput(input)
-        
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(poseDetector, queue: DispatchQueue(label: "cameraQueue"))
         captureSession.addOutput(output)
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            self.captureSession.startRunning()
-        }
+        DispatchQueue.global(qos: .userInitiated).async { self.captureSession.startRunning() }
     }
     
     private func setupRigOverlay() {
@@ -195,6 +195,7 @@ class CameraViewController: UIViewController {
         rigOverlay.backgroundColor = .black
         rigOverlay.captureSession = captureSession
         rigOverlay.showRig = self.showRig
+        rigOverlay.currentExercise = self.currentExercise
         view.addSubview(rigOverlay)
     }
     
@@ -206,19 +207,28 @@ class CameraViewController: UIViewController {
 
 class RigOverlayView: UIView {
     var showRig: Bool = false { didSet { updateJoints(joints) } }
+    var currentExercise: ExerciseType = .pushups { didSet { updateJoints(joints) } }
     private var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
     var captureSession: AVCaptureSession? { didSet { setupLayers() } }
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var drawingLayer: CAShapeLayer = CAShapeLayer()
     
-    private let connections: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
-        (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
-        (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
-        (.leftShoulder, .rightShoulder),
-        (.rightHip, .rightKnee), (.rightKnee, .rightAnkle),
-        (.leftHip, .leftKnee), (.leftKnee, .leftAnkle),
-        (.leftHip, .rightHip)
-    ]
+    // Динамический скелет в зависимости от упражнения
+    private var connections: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] {
+        if currentExercise == .squats {
+            return [
+                (.rightHip, .rightKnee), (.rightKnee, .rightAnkle),
+                (.leftHip, .leftKnee), (.leftKnee, .leftAnkle),
+                (.leftHip, .rightHip)
+            ]
+        } else {
+            return [
+                (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
+                (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
+                (.leftShoulder, .rightShoulder)
+            ]
+        }
+    }
     
     private func setupLayers() {
         guard let session = captureSession else { return }
@@ -265,10 +275,8 @@ class RigOverlayView: UIView {
         return !(point.x <= 0.01 || point.x >= 0.99 || point.y <= 0.01 || point.y >= 0.99)
     }
     
-    // ИСПОЛЬЗУЕМ НАТИВНЫЙ МЕТОД С ИНВЕРСИЕЙ Y
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
         guard let preview = previewLayer else { return .zero }
-        // 1.0 - y переворачивает координаты по вертикали
         return preview.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: visionPoint.x, y: 1.0 - visionPoint.y))
     }
 }
