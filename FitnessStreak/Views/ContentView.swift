@@ -46,11 +46,6 @@ struct ContentView: View {
                 
                 Text("Ударный режим: \(streakManager.currentStreak) 🔥")
                     .font(.title2).foregroundColor(.orange)
-                
-                if reps >= targetReps {
-                    Text("Тренировка засчитана! Молодец!")
-                        .font(.headline).foregroundColor(.green)
-                }
             }
             .padding()
             
@@ -77,12 +72,11 @@ struct CameraView: UIViewControllerRepresentable {
 class CameraViewController: UIViewController {
     var onRepCompleted: (() -> Void)?
     var showRig: Bool = false {
-        didSet { rigOverlay?.isHidden = !showRig }
+        didSet { rigOverlay?.showRig = showRig }
     }
     
     private let captureSession = AVCaptureSession()
     private let poseDetector = PoseDetector()
-    private var previewLayer: AVCaptureVideoPreviewLayer!
     private var rigOverlay: RigOverlayView!
     private var cancellables = Set<AnyCancellable>()
     
@@ -116,11 +110,6 @@ class CameraViewController: UIViewController {
         output.setSampleBufferDelegate(poseDetector, queue: DispatchQueue(label: "cameraQueue"))
         captureSession.addOutput(output)
         
-        previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.frame = view.bounds
-        view.layer.addSublayer(previewLayer)
-        
         DispatchQueue.global(qos: .userInitiated).async {
             self.captureSession.startRunning()
         }
@@ -128,65 +117,89 @@ class CameraViewController: UIViewController {
     
     private func setupRigOverlay() {
         rigOverlay = RigOverlayView(frame: view.bounds)
-        rigOverlay.backgroundColor = .clear
-        rigOverlay.isHidden = true
-        rigOverlay.previewLayer = previewLayer
+        rigOverlay.backgroundColor = .black
+        rigOverlay.captureSession = captureSession // Передаем сессию для отрисовки видео
         view.addSubview(rigOverlay)
     }
     
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        previewLayer?.frame = view.bounds
         rigOverlay?.frame = view.bounds
     }
 }
 
 class RigOverlayView: UIView {
     var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
-    weak var previewLayer: AVCaptureVideoPreviewLayer?
+    var showRig: Bool = false
+    var captureSession: AVCaptureSession? {
+        didSet { setupPreviewLayer() }
+    }
+    
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+    
+    private let connections: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
+        (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
+        (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
+        (.leftShoulder, .rightShoulder),
+        (.leftHip, .leftKnee), (.leftKnee, .leftAnkle),
+        (.rightHip, .rightKnee), (.rightKnee, .rightAnkle),
+        (.leftHip, .rightHip),
+        (.leftShoulder, .leftHip), (.rightShoulder, .rightHip),
+        (.neck, .nose)
+    ]
+    
+    private func setupPreviewLayer() {
+        guard let session = captureSession else { return }
+        let layer = AVCaptureVideoPreviewLayer(session: session)
+        layer.videoGravity = .resizeAspect
+        layer.frame = bounds
+        self.layer.addSublayer(layer)
+        self.previewLayer = layer
+    }
+    
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        previewLayer?.frame = bounds
+    }
     
     override func draw(_ rect: CGRect) {
         super.draw(rect)
-        guard let context = UIGraphicsGetCurrentContext(), let preview = previewLayer else { return }
+        guard showRig, let context = UIGraphicsGetCurrentContext() else { return }
         
         context.setStrokeColor(UIColor.green.cgColor)
-        context.setLineWidth(4.0)
-        context.setLineCap(.round)
+        context.setLineWidth(3.0)
         
-        drawLine(context: context, from: .rightShoulder, to: .rightElbow, preview: preview)
-        drawLine(context: context, from: .rightElbow, to: .rightWrist, preview: preview)
-        drawLine(context: context, from: .leftShoulder, to: .leftElbow, preview: preview)
-        drawLine(context: context, from: .leftElbow, to: .leftWrist, preview: preview)
+        for (start, end) in connections {
+            drawLine(context: context, from: start, to: end)
+        }
         
         context.setFillColor(UIColor.red.cgColor)
-        drawDot(context: context, joint: .rightShoulder, preview: preview)
-        drawDot(context: context, joint: .rightElbow, preview: preview)
-        drawDot(context: context, joint: .rightWrist, preview: preview)
-        drawDot(context: context, joint: .leftShoulder, preview: preview)
-        drawDot(context: context, joint: .leftElbow, preview: preview)
-        drawDot(context: context, joint: .leftWrist, preview: preview)
+        for (_, point) in joints {
+            drawDot(context: context, point: point)
+        }
     }
     
-    // Исправленный метод: layerPointConverted(fromCaptureDevicePoint:)
-    private func convertPoint(_ visionPoint: CGPoint, preview: AVCaptureVideoPreviewLayer) -> CGPoint {
-        let layerPoint = preview.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: visionPoint.x, y: 1.0 - visionPoint.y))
-        return layerPoint
+    // Переводим координаты Vision в координаты UIView
+    private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
+        // Если скелет перевернут (голова внизу), замените (1.0 - visionPoint.y) на visionPoint.y
+        let x = (1.0 - visionPoint.x) * bounds.width
+        let y = (1.0 - visionPoint.y) * bounds.height
+        return CGPoint(x: x, y: y)
     }
     
-    private func drawLine(context: CGContext, from: VNHumanBodyPoseObservation.JointName, to: VNHumanBodyPoseObservation.JointName, preview: AVCaptureVideoPreviewLayer) {
+    private func drawLine(context: CGContext, from: VNHumanBodyPoseObservation.JointName, to: VNHumanBodyPoseObservation.JointName) {
         guard let p1 = joints[from], let p2 = joints[to] else { return }
         
-        let point1 = convertPoint(p1, preview: preview)
-        let point2 = convertPoint(p2, preview: preview)
+        let point1 = convertPoint(p1)
+        let point2 = convertPoint(p2)
         
         context.move(to: point1)
         context.addLine(to: point2)
         context.strokePath()
     }
     
-    private func drawDot(context: CGContext, joint: VNHumanBodyPoseObservation.JointName, preview: AVCaptureVideoPreviewLayer) {
-        guard let p = joints[joint] else { return }
-        let point = convertPoint(p, preview: preview)
-        context.fillEllipse(in: CGRect(x: point.x - 5, y: point.y - 5, width: 10, height: 10))
+    private func drawDot(context: CGContext, point: CGPoint) {
+        let p = convertPoint(point)
+        context.fillEllipse(in: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8))
     }
 }
