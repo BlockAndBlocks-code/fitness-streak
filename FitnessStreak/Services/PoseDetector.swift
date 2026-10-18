@@ -26,8 +26,8 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             self?.analyzePose(result)
         }
         
-        // ИСПРАВЛЕНИЕ: Ориентация .right для поворота кадра
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
+        // Оставляем .up, координаты перевернем в RigOverlayView
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
         try? handler.perform([request])
     }
     
@@ -96,6 +96,7 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         guard let s = points[.rightShoulder]?.location ?? points[.leftShoulder]?.location,
               let h = points[.rightHip]?.location ?? points[.leftHip]?.location else { return }
         
+        // Для планки проверяем, что плечи и бедра на одной линии
         if abs(s.y - h.y) > 0.2 { return }
         
         let now = Date()

@@ -18,7 +18,7 @@ struct ContentView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // ВЕРХ: Камера
+            // Камера
             ZStack {
                 CameraView(
                     currentExercise: workoutManager.exercises.isEmpty ? .pushups : workoutManager.exercises[currentExerciseIndex].type,
@@ -35,14 +35,12 @@ struct ContentView: View {
             .frame(maxHeight: .infinity)
             .background(Color.black)
             
-            // НИЗ: Панель управления
+            // Нижняя панель
             VStack(spacing: 15) {
-                // Карточка текущего упражнения
                 if !workoutManager.exercises.isEmpty {
                     let ex = workoutManager.exercises[currentExerciseIndex]
                     VStack(spacing: 5) {
-                        Text(ex.type.rawValue)
-                            .font(.headline).foregroundColor(.gray)
+                        Text(ex.type.rawValue).font(.headline).foregroundColor(.gray)
                         
                         if isAllDone {
                             Text("Все выполнено! 🎉").font(.title).bold().foregroundColor(.green)
@@ -59,18 +57,16 @@ struct ContentView: View {
                 }
                 
                 HStack(spacing: 20) {
-                    // Сброс
                     Button(action: {
                         currentExerciseIndex = 0
                         currentProgress = 0
                         isWorkoutActive = false
                         isAllDone = false
-                        workoutManager.forceReset() // Новые упражнения
+                        workoutManager.forceReset()
                     }) {
                         Image(systemName: "arrow.counterclockwise").font(.title).padding().background(Color.gray.opacity(0.3)).foregroundColor(.white).clipShape(Circle())
                     }
                     
-                    // Главная кнопка
                     Button(action: startWorkout) {
                         Text(isAllDone ? "ГОТОВО" : (isWorkoutActive ? "ВЫПОЛНЯЙТЕ" : "СТАРТ"))
                             .font(.title2.bold()).padding(.horizontal, 40).padding(.vertical, 15)
@@ -79,7 +75,6 @@ struct ContentView: View {
                     }
                     .disabled(isWorkoutActive || countdown > 0 || isAllDone)
                     
-                    // Отладка
                     Button(action: { showRig.toggle() }) {
                         Image(systemName: showRig ? "eye.fill" : "eye.slash.fill").font(.title).padding().background(Color.gray.opacity(0.3)).foregroundColor(.white).clipShape(Circle())
                     }
@@ -106,34 +101,25 @@ struct ContentView: View {
     func handleRepCompleted() {
         guard isWorkoutActive, !workoutManager.exercises.isEmpty else { return }
         let target = workoutManager.exercises[currentExerciseIndex].target
-        
         currentProgress += 1
-        if currentProgress >= target {
-            finishExercise()
-        }
+        if currentProgress >= target { finishExercise() }
     }
     
     func handlePlankTick() {
         guard isWorkoutActive, !workoutManager.exercises.isEmpty else { return }
         let ex = workoutManager.exercises[currentExerciseIndex]
         guard ex.type == .plank else { return }
-        
         currentProgress += 1
-        if currentProgress >= ex.target {
-            finishExercise()
-        }
+        if currentProgress >= ex.target { finishExercise() }
     }
     
     func finishExercise() {
         isWorkoutActive = false
-        
         if currentExerciseIndex + 1 < workoutManager.exercises.count {
-            // Переход к следующему упражнению
             currentExerciseIndex += 1
             currentProgress = 0
-            countdown = 3 // Новый отсчет 3..2..1
+            countdown = 3
         } else {
-            // Все упражнения выполнены!
             isAllDone = true
             streakManager.completeWorkout()
         }
@@ -218,6 +204,7 @@ class RigOverlayView: UIView {
     private var drawingLayer: CAShapeLayer = CAShapeLayer()
     
     private let connections: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
+        // Поменяли местами left и right, чтобы соответствовать зеркалу
         (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
         (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
         (.leftShoulder, .rightShoulder),
@@ -269,7 +256,16 @@ class RigOverlayView: UIView {
         return !(point.x <= 0.01 || point.x >= 0.99 || point.y <= 0.01 || point.y >= 0.99)
     }
     
+    // --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+    // Поворачиваем координаты Vision на 90 градусов для вертикального экрана
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
-        return CGPoint(x: visionPoint.x * bounds.width, y: (1.0 - visionPoint.y) * bounds.height)
+        // Так как камера отдает горизонтальную картинку:
+        // Ось X в Vision (горизонталь) становится осью Y на экране (вертикаль).
+        // Ось Y в Vision (вертикаль) становится осью X на экране (горизонталь).
+        
+        let x = visionPoint.y * bounds.width
+        let y = (1.0 - visionPoint.x) * bounds.height
+        
+        return CGPoint(x: x, y: y)
     }
 }
