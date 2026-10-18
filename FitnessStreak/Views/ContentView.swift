@@ -5,75 +5,129 @@ import Vision
 
 struct ContentView: View {
     @StateObject private var streakManager = StreakManager()
+    
+    // Состояния игры
     @State private var reps = 0
     @State private var targetReps = 5
     @State private var showRig = false
+    @State private var isWorkoutActive = false // Включен ли подсчет
+    @State private var countdown = 0 // Таймер 3-2-1
+    
+    // Таймер для отсчета
+    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        VStack {
+        VStack(spacing: 0) {
+            // 1. ВЕРХНЯЯ ЧАСТЬ: Камера
             ZStack {
                 CameraView(onRepCompleted: {
+                    // Этот блок срабатывает только если isWorkoutActive == true
+                    guard isWorkoutActive else { return }
+                    
                     if reps < targetReps {
                         reps += 1
                         if reps == targetReps {
                             streakManager.completeWorkout()
+                            isWorkoutActive = false // Выключаем камеру после победы
                         }
                     }
                 }, showRig: showRig)
                 
-                VStack {
-                    HStack {
-                        // Кнопка сброса
-                        Button(action: {
-                            reps = 0
-                            // Если хотите сбрасывать и ударный режим, раскомментируйте строку ниже:
-                            // streakManager.resetStreak() 
-                        }) {
-                            Image(systemName: "arrow.counterclockwise.circle.fill")
-                                .font(.system(size: 30))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Circle())
-                        }
-                        .padding()
-                        
-                        Spacer()
-                        
-                        // Кнопка отладки
-                        Button(action: { showRig.toggle() }) {
-                            Image(systemName: showRig ? "eye.fill" : "eye.slash.fill")
-                                .font(.system(size: 30))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Circle())
-                        }
-                        .padding()
-                    }
-                    Spacer()
+                // Таймер обратного отсчета поверх камеры
+                if countdown > 0 {
+                    Text("\(countdown)")
+                        .font(.system(size: 100, weight: .bold))
+                        .foregroundColor(.white)
+                        .shadow(radius: 10)
                 }
             }
-            .frame(height: 400)
-            .cornerRadius(20)
-            .padding()
+            .frame(maxHeight: .infinity) // Камера занимает все свободное место сверху
+            .background(Color.black)
             
-            VStack(spacing: 10) {
-                Text("Отжимания: \(reps) / \(targetReps)")
-                    .font(.title).fontWeight(.bold)
-                
-                Text("Ударный режим: \(streakManager.currentStreak) 🔥")
-                    .font(.title2).foregroundColor(.orange)
+            // 2. НИЖНЯЯ ЧАСТЬ: Кнопки и статистика
+            VStack(spacing: 20) {
+                // Прогресс и ударный режим
+                HStack {
+                    VStack {
+                        Text("Ударный режим")
+                            .font(.caption).foregroundColor(.gray)
+                        Text("\(streakManager.currentStreak) 🔥")
+                            .font(.title2).foregroundColor(.orange).bold()
+                    }
+                    Spacer()
+                    VStack {
+                        Text("Отжимания")
+                            .font(.caption).foregroundColor(.gray)
+                        Text("\(reps) / \(targetReps)")
+                            .font(.title2).foregroundColor(.white).bold()
+                    }
+                }
+                .padding(.horizontal, 30)
                 
                 if reps >= targetReps {
                     Text("Тренировка засчитана! Молодец!")
                         .font(.headline).foregroundColor(.green)
                 }
+                
+                // Кнопки управления
+                HStack(spacing: 20) {
+                    // Кнопка сброса
+                    Button(action: {
+                        reps = 0
+                        isWorkoutActive = false
+                        countdown = 0
+                    }) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.title)
+                            .padding()
+                            .background(Color.gray.opacity(0.3))
+                            .foregroundColor(.white)
+                            .clipShape(Circle())
+                    }
+                    
+                    // Главная кнопка СТАРТ
+                    Button(action: startWorkout) {
+                        Text(isWorkoutActive ? "ИДЕТ ТРЕНИРОВКА" : "СТАРТ")
+                            .font(.title2.bold())
+                            .padding(.horizontal, 40)
+                            .padding(.vertical, 15)
+                            .background(isWorkoutActive ? Color.gray : Color.green)
+                            .foregroundColor(.white)
+                            .cornerRadius(30)
+                    }
+                    .disabled(isWorkoutActive || countdown > 0)
+                    
+                    // Кнопка отладки (Глаз)
+                    Button(action: { showRig.toggle() }) {
+                        Image(systemName: showRig ? "eye.fill" : "eye.slash.fill")
+                            .font(.title)
+                            .padding()
+                            .background(Color.gray.opacity(0.3))
+                            .foregroundColor(.white)
+                            .clipShape(Circle())
+                    }
+                }
+                .padding(.bottom, 30)
             }
-            .padding()
-            
-            Spacer()
+            .background(Color(UIColor.systemBackground))
+            .onReceive(timer) { _ in
+                // Логика таймера
+                if countdown > 0 {
+                    countdown -= 1
+                    if countdown == 0 {
+                        isWorkoutActive = true // Включаем камеру
+                    }
+                }
+            }
         }
+        .edgesIgnoringSafeArea(.top)
+    }
+    
+    // Функция запуска тренировки
+    func startWorkout() {
+        reps = 0 // Сбрасываем старый прогресс
+        isWorkoutActive = false
+        countdown = 3 // Запускаем отсчет 3..2..1
     }
 }
 
