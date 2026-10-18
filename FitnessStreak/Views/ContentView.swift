@@ -10,10 +10,9 @@ struct ContentView: View {
     @State private var reps = 0
     @State private var targetReps = 5
     @State private var showRig = false
-    @State private var isWorkoutActive = false // Включен ли подсчет
-    @State private var countdown = 0 // Таймер 3-2-1
+    @State private var isWorkoutActive = false
+    @State private var countdown = 0
     
-    // Таймер для отсчета
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     var body: some View {
@@ -21,32 +20,30 @@ struct ContentView: View {
             // 1. ВЕРХНЯЯ ЧАСТЬ: Камера
             ZStack {
                 CameraView(onRepCompleted: {
-                    // Этот блок срабатывает только если isWorkoutActive == true
                     guard isWorkoutActive else { return }
                     
                     if reps < targetReps {
                         reps += 1
                         if reps == targetReps {
                             streakManager.completeWorkout()
-                            isWorkoutActive = false // Выключаем камеру после победы
+                            isWorkoutActive = false
                         }
                     }
                 }, showRig: showRig)
                 
-                // Таймер обратного отсчета поверх камеры
+                // Таймер обратного отсчета
                 if countdown > 0 {
                     Text("\(countdown)")
-                        .font(.system(size: 100, weight: .bold))
+                        .font(.system(size: 120, weight: .bold))
                         .foregroundColor(.white)
-                        .shadow(radius: 10)
+                        .shadow(color: .black.opacity(0.5), radius: 10)
                 }
             }
-            .frame(maxHeight: .infinity) // Камера занимает все свободное место сверху
+            .frame(maxHeight: .infinity)
             .background(Color.black)
             
             // 2. НИЖНЯЯ ЧАСТЬ: Кнопки и статистика
             VStack(spacing: 20) {
-                // Прогресс и ударный режим
                 HStack {
                     VStack {
                         Text("Ударный режим")
@@ -69,7 +66,6 @@ struct ContentView: View {
                         .font(.headline).foregroundColor(.green)
                 }
                 
-                // Кнопки управления
                 HStack(spacing: 20) {
                     // Кнопка сброса
                     Button(action: {
@@ -97,7 +93,7 @@ struct ContentView: View {
                     }
                     .disabled(isWorkoutActive || countdown > 0)
                     
-                    // Кнопка отладки (Глаз)
+                    // Кнопка отладки
                     Button(action: { showRig.toggle() }) {
                         Image(systemName: showRig ? "eye.fill" : "eye.slash.fill")
                             .font(.title)
@@ -111,11 +107,10 @@ struct ContentView: View {
             }
             .background(Color(UIColor.systemBackground))
             .onReceive(timer) { _ in
-                // Логика таймера
                 if countdown > 0 {
                     countdown -= 1
                     if countdown == 0 {
-                        isWorkoutActive = true // Включаем камеру
+                        isWorkoutActive = true
                     }
                 }
             }
@@ -123,11 +118,10 @@ struct ContentView: View {
         .edgesIgnoringSafeArea(.top)
     }
     
-    // Функция запуска тренировки
     func startWorkout() {
-        reps = 0 // Сбрасываем старый прогресс
+        reps = 0
         isWorkoutActive = false
-        countdown = 3 // Запускаем отсчет 3..2..1
+        countdown = 3
     }
 }
 
@@ -220,7 +214,6 @@ class RigOverlayView: UIView {
     private var drawingLayer: CAShapeLayer = CAShapeLayer()
     
     private let connections: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
-        // Поменяли местами left и right, чтобы соответствовать зеркалу
         (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
         (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
         (.leftShoulder, .rightShoulder)
@@ -229,17 +222,15 @@ class RigOverlayView: UIView {
     private func setupLayers() {
         guard let session = captureSession else { return }
         
-        // 1. Слой видео (кладем в самый низ)
         let layer = AVCaptureVideoPreviewLayer(session: session)
         layer.videoGravity = .resizeAspect
         layer.frame = bounds
         self.layer.insertSublayer(layer, at: 0)
         self.previewLayer = layer
         
-        // 2. Слой для скелета (кладем поверх видео)
         drawingLayer.frame = bounds
         drawingLayer.strokeColor = UIColor.green.cgColor
-        drawingLayer.lineWidth = 3.0
+        drawingLayer.lineWidth = 4.0
         drawingLayer.fillColor = UIColor.clear.cgColor
         self.layer.addSublayer(drawingLayer)
     }
@@ -260,7 +251,9 @@ class RigOverlayView: UIView {
         let path = UIBezierPath()
         
         for (start, end) in connections {
-            if let p1 = joints[start], let p2 = joints[end] {
+            if let p1 = joints[start], let p2 = joints[end],
+               isValidPoint(p1), isValidPoint(p2) {
+                
                 let point1 = convertPoint(p1)
                 let point2 = convertPoint(p2)
                 path.move(to: point1)
@@ -269,15 +262,23 @@ class RigOverlayView: UIView {
         }
         
         for (_, point) in joints {
-            let p = convertPoint(point)
-            path.append(UIBezierPath(ovalIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)))
+            if isValidPoint(point) {
+                let p = convertPoint(point)
+                path.append(UIBezierPath(ovalIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)))
+            }
         }
         
         drawingLayer.path = path.cgPath
     }
     
+    private func isValidPoint(_ point: CGPoint) -> Bool {
+        if point.x <= 0.01 || point.x >= 0.99 || point.y <= 0.01 || point.y >= 0.99 {
+            return false
+        }
+        return true
+    }
+    
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
-        // Убрали (1.0 - x), так как камера сама по себе зеркалит картинку
         let x = visionPoint.x * bounds.width
         let y = (1.0 - visionPoint.y) * bounds.height
         return CGPoint(x: x, y: y)
