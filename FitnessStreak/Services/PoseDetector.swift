@@ -18,6 +18,16 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
     private var framesCount = 0
     private var lastPlankTime = Date()
     
+    // Настраиваем видеовыход на правильную ориентацию
+    func configureOutput(_ output: AVCaptureVideoDataOutput, connection: AVCaptureConnection) {
+        if connection.isVideoOrientationSupported {
+            connection.videoOrientation = .portrait
+        }
+        if connection.isVideoMirroringSupported {
+            connection.isVideoMirrored = true
+        }
+    }
+    
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
@@ -26,7 +36,7 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             self?.analyzePose(result)
         }
         
-        // Оставляем .up, координаты перевернем в RigOverlayView
+        // Теперь используем .up, так как соединение уже повернуто в портрет
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
         try? handler.perform([request])
     }
@@ -41,12 +51,9 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         guard isActive else { return }
         
         switch currentExercise {
-        case .pushups:
-            checkPushups(allPoints)
-        case .squats:
-            checkSquats(allPoints)
-        case .plank:
-            checkPlank(allPoints)
+        case .pushups: checkPushups(allPoints)
+        case .squats: checkSquats(allPoints)
+        case .plank: checkPlank(allPoints)
         }
     }
     
@@ -54,7 +61,6 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         let shoulder = points[.rightShoulder]?.location ?? points[.leftShoulder]?.location
         let elbow = points[.rightElbow]?.location ?? points[.leftElbow]?.location
         let wrist = points[.rightWrist]?.location ?? points[.leftWrist]?.location
-        
         guard let s = shoulder, let e = elbow, let w = wrist else { return }
         let angle = calculateAngle(p1: s, p2: e, p3: w)
         
@@ -63,19 +69,14 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             if framesCount > 30 && angle > 140 { isStabilized = true }
             return
         }
-        
         if angle < 100 && !isDown { isDown = true }
-        else if angle > 150 && isDown {
-            isDown = false
-            triggerRep()
-        }
+        else if angle > 150 && isDown { isDown = false; triggerRep() }
     }
     
     private func checkSquats(_ points: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
         let hip = points[.rightHip]?.location ?? points[.leftHip]?.location
         let knee = points[.rightKnee]?.location ?? points[.leftKnee]?.location
         let ankle = points[.rightAnkle]?.location ?? points[.leftAnkle]?.location
-        
         guard let h = hip, let k = knee, let a = ankle else { return }
         let angle = calculateAngle(p1: h, p2: k, p3: a)
         
@@ -84,19 +85,13 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             if framesCount > 30 && angle > 150 { isStabilized = true }
             return
         }
-        
         if angle < 110 && !isDown { isDown = true }
-        else if angle > 160 && isDown {
-            isDown = false
-            triggerRep()
-        }
+        else if angle > 160 && isDown { isDown = false; triggerRep() }
     }
     
     private func checkPlank(_ points: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
         guard let s = points[.rightShoulder]?.location ?? points[.leftShoulder]?.location,
               let h = points[.rightHip]?.location ?? points[.leftHip]?.location else { return }
-        
-        // Для планки проверяем, что плечи и бедра на одной линии
         if abs(s.y - h.y) > 0.2 { return }
         
         let now = Date()

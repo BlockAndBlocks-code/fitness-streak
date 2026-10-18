@@ -26,7 +26,6 @@ struct ContentView: View {
                     onPlankTick: handlePlankTick,
                     showRig: showRig
                 )
-                
                 if countdown > 0 {
                     Text("\(countdown)").font(.system(size: 120, weight: .bold)).foregroundColor(.white).shadow(radius: 10)
                 }
@@ -39,39 +38,27 @@ struct ContentView: View {
                     let ex = workoutManager.exercises[currentExerciseIndex]
                     VStack(spacing: 5) {
                         Text(ex.type.rawValue).font(.headline).foregroundColor(.gray)
-                        
                         if isAllDone {
                             Text("Все выполнено! 🎉").font(.title).bold().foregroundColor(.green)
                         } else {
-                            Text("\(currentProgress) / \(ex.target)")
-                                .font(.title).bold().foregroundColor(.primary)
+                            Text("\(currentProgress) / \(ex.target)").font(.title).bold().foregroundColor(.primary)
                         }
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(15)
-                    .padding(.horizontal)
+                    .padding().frame(maxWidth: .infinity).background(Color.gray.opacity(0.1)).cornerRadius(15).padding(.horizontal)
                 }
                 
                 HStack(spacing: 20) {
                     Button(action: {
-                        currentExerciseIndex = 0
-                        currentProgress = 0
-                        isWorkoutActive = false
-                        isAllDone = false
-                        workoutManager.forceReset()
+                        currentExerciseIndex = 0; currentProgress = 0; isWorkoutActive = false; isAllDone = false; workoutManager.forceReset()
                     }) {
                         Image(systemName: "arrow.counterclockwise").font(.title).padding().background(Color.gray.opacity(0.3)).foregroundColor(.white).clipShape(Circle())
                     }
-                    
                     Button(action: startWorkout) {
                         Text(isAllDone ? "ГОТОВО" : (isWorkoutActive ? "ВЫПОЛНЯЙТЕ" : "СТАРТ"))
                             .font(.title2.bold()).padding(.horizontal, 40).padding(.vertical, 15)
                             .background(isWorkoutActive ? Color.gray : (isAllDone ? Color.gray : Color.green))
                             .foregroundColor(.white).cornerRadius(30)
-                    }
-                    .disabled(isWorkoutActive || countdown > 0 || isAllDone)
+                    }.disabled(isWorkoutActive || countdown > 0 || isAllDone)
                     
                     Button(action: { showRig.toggle() }) {
                         Image(systemName: showRig ? "eye.fill" : "eye.slash.fill").font(.title).padding().background(Color.gray.opacity(0.3)).foregroundColor(.white).clipShape(Circle())
@@ -81,28 +68,19 @@ struct ContentView: View {
             .padding(.bottom, 30)
             .background(Color(UIColor.systemBackground))
             .onReceive(timer) { _ in
-                if countdown > 0 {
-                    countdown -= 1
-                    if countdown == 0 { isWorkoutActive = true }
-                }
+                if countdown > 0 { countdown -= 1; if countdown == 0 { isWorkoutActive = true } }
             }
         }
         .edgesIgnoringSafeArea(.top)
     }
     
-    func startWorkout() {
-        currentProgress = 0
-        isWorkoutActive = false
-        countdown = 3
-    }
-    
+    func startWorkout() { currentProgress = 0; isWorkoutActive = false; countdown = 3 }
     func handleRepCompleted() {
         guard isWorkoutActive, !workoutManager.exercises.isEmpty else { return }
         let target = workoutManager.exercises[currentExerciseIndex].target
         currentProgress += 1
         if currentProgress >= target { finishExercise() }
     }
-    
     func handlePlankTick() {
         guard isWorkoutActive, !workoutManager.exercises.isEmpty else { return }
         let ex = workoutManager.exercises[currentExerciseIndex]
@@ -110,16 +88,12 @@ struct ContentView: View {
         currentProgress += 1
         if currentProgress >= ex.target { finishExercise() }
     }
-    
     func finishExercise() {
         isWorkoutActive = false
         if currentExerciseIndex + 1 < workoutManager.exercises.count {
-            currentExerciseIndex += 1
-            currentProgress = 0
-            countdown = 3
+            currentExerciseIndex += 1; currentProgress = 0; countdown = 3
         } else {
-            isAllDone = true
-            streakManager.completeWorkout()
+            isAllDone = true; streakManager.completeWorkout()
         }
     }
 }
@@ -137,7 +111,6 @@ struct CameraView: UIViewControllerRepresentable {
         controller.onPlankTick = onPlankTick
         return controller
     }
-    
     func updateUIViewController(_ uiViewController: CameraViewController, context: Context) {
         uiViewController.showRig = showRig
         uiViewController.currentExercise = currentExercise
@@ -174,9 +147,16 @@ class CameraViewController: UIViewController {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
               let input = try? AVCaptureDeviceInput(device: device) else { return }
         captureSession.addInput(input)
+        
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(poseDetector, queue: DispatchQueue(label: "cameraQueue"))
         captureSession.addOutput(output)
+        
+        // ВАЖНО: Настраиваем соединение на портретный режим!
+        if let connection = output.connection(with: .video) {
+            poseDetector.configureOutput(output, connection: connection)
+        }
+        
         DispatchQueue.global(qos: .userInitiated).async { self.captureSession.startRunning() }
     }
     
@@ -213,7 +193,7 @@ class RigOverlayView: UIView {
     private func setupLayers() {
         guard let session = captureSession else { return }
         let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspect
+        layer.videoGravity = .resizeAspectFill // Заполняем экран
         layer.frame = bounds
         self.layer.insertSublayer(layer, at: 0)
         self.previewLayer = layer
@@ -253,14 +233,11 @@ class RigOverlayView: UIView {
         return !(point.x <= 0.01 || point.x >= 0.99 || point.y <= 0.01 || point.y >= 0.99)
     }
     
-    // --- ИСПРАВЛЕНИЕ: Инвертируем обе оси ---
+    // --- ВОЗВРАЩАЕМ НАТИВНЫЙ МЕТОД ---
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
-        // Мы меняем местами X и Y, а также инвертируем их (вычитаем из 1.0),
-        // так как камера перевернута и относительно экрана, и относительно нейросети.
-        
-        let x = (1.0 - visionPoint.y) * bounds.width
-        let y = (1.0 - visionPoint.x) * bounds.height
-        
-        return CGPoint(x: x, y: y)
+        guard let preview = previewLayer else { return .zero }
+        // layerPointConverted сам учтет портретную ориентацию, зеркалирование и Aspect Fill
+        // ВАЖНО: убираем 1.0 - y, так как слой теперь сам переворачивает Y
+        return preview.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: visionPoint.x, y: 1.0 - visionPoint.y))
     }
 }
