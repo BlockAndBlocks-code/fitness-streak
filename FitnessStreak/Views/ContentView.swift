@@ -18,7 +18,6 @@ struct ContentView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Камера
             ZStack {
                 CameraView(
                     currentExercise: workoutManager.exercises.isEmpty ? .pushups : workoutManager.exercises[currentExerciseIndex].type,
@@ -35,7 +34,6 @@ struct ContentView: View {
             .frame(maxHeight: .infinity)
             .background(Color.black)
             
-            // Нижняя панель
             VStack(spacing: 15) {
                 if !workoutManager.exercises.isEmpty {
                     let ex = workoutManager.exercises[currentExerciseIndex]
@@ -204,7 +202,6 @@ class RigOverlayView: UIView {
     private var drawingLayer: CAShapeLayer = CAShapeLayer()
     
     private let connections: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName)] = [
-        // Поменяли местами left и right, чтобы соответствовать зеркалу
         (.rightShoulder, .rightElbow), (.rightElbow, .rightWrist),
         (.leftShoulder, .leftElbow), (.leftElbow, .leftWrist),
         (.leftShoulder, .rightShoulder),
@@ -256,14 +253,12 @@ class RigOverlayView: UIView {
         return !(point.x <= 0.01 || point.x >= 0.99 || point.y <= 0.01 || point.y >= 0.99)
     }
     
-    // --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-    // Поворачиваем координаты Vision на 90 градусов для вертикального экрана
+    // --- ИСПРАВЛЕНИЕ: Инвертируем обе оси ---
     private func convertPoint(_ visionPoint: CGPoint) -> CGPoint {
-        // Так как камера отдает горизонтальную картинку:
-        // Ось X в Vision (горизонталь) становится осью Y на экране (вертикаль).
-        // Ось Y в Vision (вертикаль) становится осью X на экране (горизонталь).
+        // Мы меняем местами X и Y, а также инвертируем их (вычитаем из 1.0),
+        // так как камера перевернута и относительно экрана, и относительно нейросети.
         
-        let x = visionPoint.y * bounds.width
+        let x = (1.0 - visionPoint.y) * bounds.width
         let y = (1.0 - visionPoint.x) * bounds.height
         
         return CGPoint(x: x, y: y)
