@@ -6,7 +6,7 @@ import Combine
 
 class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     var onRepCompleted: (() -> Void)?
-    var onPlankTick: (() -> Void)? // Для планки
+    var onPlankTick: (() -> Void)?
     
     @Published var joints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
     
@@ -26,21 +26,20 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             self?.analyzePose(result)
         }
         
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        // ИСПРАВЛЕНИЕ: Ориентация .right для поворота кадра
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
         try? handler.perform([request])
     }
     
     private func analyzePose(_ observation: VNHumanBodyPoseObservation) {
         guard let allPoints = try? observation.recognizedPoints(.all) else { return }
         
-        // Обновляем скелет
         var newJoints: [VNHumanBodyPoseObservation.JointName: CGPoint] = [:]
         for (key, point) in allPoints { newJoints[key] = point.location }
         DispatchQueue.main.async { [weak self] in self?.joints = newJoints }
         
         guard isActive else { return }
         
-        // Логика для разных упражнений
         switch currentExercise {
         case .pushups:
             checkPushups(allPoints)
@@ -51,7 +50,6 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         }
     }
     
-    // ОТЖИМАНИЯ
     private func checkPushups(_ points: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
         let shoulder = points[.rightShoulder]?.location ?? points[.leftShoulder]?.location
         let elbow = points[.rightElbow]?.location ?? points[.leftElbow]?.location
@@ -73,7 +71,6 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         }
     }
     
-    // ПРИСЕДАНИЯ
     private func checkSquats(_ points: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
         let hip = points[.rightHip]?.location ?? points[.leftHip]?.location
         let knee = points[.rightKnee]?.location ?? points[.leftKnee]?.location
@@ -88,7 +85,6 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
             return
         }
         
-        // Если угол меньше 110 — присели. Если больше 160 — встали.
         if angle < 110 && !isDown { isDown = true }
         else if angle > 160 && isDown {
             isDown = false
@@ -96,17 +92,11 @@ class PoseDetector: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBu
         }
     }
     
-    // ПЛАНКА (Считаем время, проверяя, что человек в планке)
     private func checkPlank(_ points: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
-        // Простая проверка: плечи и бедра должны быть примерно на одной высоте.
-        // Если человек упал (бедра ниже плеч), таймер останавливается.
         guard let s = points[.rightShoulder]?.location ?? points[.leftShoulder]?.location,
               let h = points[.rightHip]?.location ?? points[.leftHip]?.location else { return }
         
-        // Если разница по Y слишком большая — значит человек упал или встал
-        if abs(s.y - h.y) > 0.2 {
-            return // Не в планке, время не идет
-        }
+        if abs(s.y - h.y) > 0.2 { return }
         
         let now = Date()
         if now.timeIntervalSince(lastPlankTime) >= 1.0 {
